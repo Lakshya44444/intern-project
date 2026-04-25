@@ -1,0 +1,30 @@
+Defaulting to user installation because normal site-packages is not writeable
+WARNING: Ignoring invalid distribution ~ (C:\Users\Lakshya Gupta\AppData\Roaming\Python\Python313\site-packages)
+WARNING: Ignoring invalid distribution ~atplotlib (C:\Users\Lakshya Gupta\AppData\Roaming\Python\Python313\site-packages)
+Collecting googlemaps
+  Downloading googlemaps-4.10.0.tar.gz (33 kB)
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Installing backend dependencies: started
+  Installing backend dependencies: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: requests<3.0,>=2.20.0 in C:\Users\Lakshya Gupta\AppData\Roaming\Python\Python313\site-packages (from googlemaps) (2.32.5)
+Requirement already satisfied: charset_normalizer<4,>=2 in C:\Users\Lakshya Gupta\AppData\Roaming\Python\Python313\site-packages (from requests<3.0,>=2.20.0->googlemaps) (3.4.4)
+Requirement already satisfied: idna<4,>=2.5 in C:\Users\Lakshya Gupta\AppData\Roaming\Python\Python313\site-packages (from requests<3.0,>=2.20.0->googlemaps) (3.11)
+Requirement already satisfied: urllib3<3,>=1.21.1 in C:\Users\Lakshya Gupta\AppData\Roaming\Python\Python313\site-packages (from requests<3.0,>=2.20.0->googlemaps) (2.6.3)
+Requirement already satisfied: certifi>=2017.4.17 in C:\Users\Lakshya Gupta\AppData\Roaming\Python\Python313\site-packages (from requests<3.0,>=2.20.0->googlemaps) (2026.1.4)
+Building wheels for collected packages: googlemaps
+  Building wheel for googlemaps (pyproject.toml): started
+  Building wheel for googlemaps (pyproject.toml): finished with status 'done'
+  Created wheel for googlemaps: filename=googlemaps-4.10.0-py3-none-any.whl size=40854 sha256=91df143023d68fef7dc64db6dfd9d3d8866c0def3c21ed116d63048ad204689f
+  Stored in directory: c:\users\lakshya gupta\appdata\local\pip\cache\wheels\76\2a\24\5993a7b77c9a37b86f415096436a448c1babdd132066bdcb31
+Successfully built googlemaps
+WARNING: Ignoring invalid distribution ~ (C:\Users\Lakshya Gupta\AppData\Roaming\Python\Python313\site-packages)
+WARNING: Ignoring invalid distribution ~atplotlib (C:\Users\Lakshya Gupta\AppData\Roaming\Python\Python313\site-packages)
+Installing collected packages: googlemaps
+WARNING: Ignoring invalid distribution ~ (C:\Users\Lakshya Gupta\AppData\Roaming\Python\Python313\site-packages)
+WARNING: Ignoring invalid distribution ~atplotlib (C:\Users\Lakshya Gupta\AppData\Roaming\Python\Python313\site-packages)
+Successfully installed googlemaps-4.10.0
