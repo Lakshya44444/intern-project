@@ -1,21 +1,52 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from './lib/supabaseClient'
 import Header from './components/Header'
 import InputForm from './components/InputForm'
 import ResultDashboard from './components/ResultDashboard'
-import { AlertCircle } from 'lucide-react'
+import AuthPage from './components/AuthPage'
+import { AlertCircle, Loader2 } from 'lucide-react'
 
 export default function App() {
-  const [result, setResult]   = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState(null)
+  const [result, setResult]       = useState(null)
+  const [loading, setLoading]     = useState(false)
+  const [error, setError]         = useState(null)
+  const [user, setUser]           = useState(null)
+  const [authReady, setAuthReady] = useState(false)   // true once session is known
+
+  // Resolve session on mount, then listen for changes
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      setAuthReady(true)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    setResult(null)
+    setError(null)
+  }
 
   const handlePredict = async (formData) => {
     setLoading(true)
     setError(null)
     try {
+      // Attach current JWT so the backend can verify the user
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers = { 'Content-Type': 'application/json' }
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+
       const res = await fetch('/api/predict', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body:    JSON.stringify(formData),
       })
 
@@ -25,9 +56,15 @@ export default function App() {
       } catch {
         throw new Error(
           res.status === 0 || !res.status
-            ? 'Cannot reach Flask server — run: python app.py'
-            : `Server error (HTTP ${res.status}) — check Flask console for traceback`
+            ? 'Cannot reach API server — run: python app.py (or uvicorn app:app --port 5000)'
+            : `Server error (HTTP ${res.status}) — check the API server console`
         )
+      }
+
+      if (res.status === 401) {
+        // Token expired — force re-login
+        await supabase.auth.signOut()
+        throw new Error('Session expired. Please sign in again.')
       }
 
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
@@ -39,6 +76,19 @@ export default function App() {
     }
   }
 
+  // Splash while checking stored session
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-950
+                      flex items-center justify-center">
+        <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
+      </div>
+    )
+  }
+
+  // Not logged in — show auth page
+  if (!user) return <AuthPage />
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-950 text-white">
       {/* Ambient background blobs */}
@@ -49,7 +99,7 @@ export default function App() {
       </div>
 
       <div className="relative z-10">
-        <Header />
+        <Header user={user} onLogout={handleLogout} />
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 pb-16">
           {error && (

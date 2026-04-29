@@ -1,6 +1,6 @@
-import { Truck, Zap } from 'lucide-react'
+import { Truck, Zap, LogOut, User } from 'lucide-react'
 
-export default function Header() {
+export default function Header({ user, onLogout }) {
   return (
     <header className="py-8 px-4 sm:px-6 max-w-7xl mx-auto mb-4">
       <div className="flex items-center justify-between">
@@ -29,10 +29,36 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Status badges */}
-        <div className="hidden sm:flex items-center gap-3">
-          <StatBadge label="Risk AUC" value="0.88" color="emerald" />
-          <StatBadge label="Pricing R²" value="0.91" color="blue" />
+        {/* Right side: model stats + user */}
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-3">
+            <StatBadge label="Risk AUC" value="0.91" color="emerald" />
+            <StatBadge label="Pricing R²" value="0.93" color="blue" />
+          </div>
+
+          {user && (
+            <div className="flex items-center gap-2 pl-3 border-l border-white/10">
+              {/* User email chip */}
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.05] border border-white/10">
+                <User className="w-3 h-3 text-white/40" />
+                <span className="text-xs text-white/50 max-w-[140px] truncate">
+                  {user.email}
+                </span>
+              </div>
+
+              {/* Logout button */}
+              <button
+                onClick={onLogout}
+                title="Sign out"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-white/10
+                           text-white/40 hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/5
+                           transition-all duration-200 text-xs"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Sign out</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

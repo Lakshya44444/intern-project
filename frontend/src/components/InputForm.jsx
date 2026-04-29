@@ -7,6 +7,13 @@ import {
 
 const TODAY = new Date().toISOString().split('T')[0]
 
+const VEHICLE_TYPES = [
+  { id: 'LCV',     label: 'LCV',    sub: 'Light',     hint: 'Tata Ace · Bolero',  lam: '0.15', maxW: 3,   defW: 1.5 },
+  { id: 'MCV',     label: 'MCV',    sub: 'Medium',    hint: '407 · Eicher',       lam: '0.10', maxW: 12,  defW: 5   },
+  { id: 'FTL',     label: 'Heavy',  sub: 'HCV / FTL', hint: '18-wheeler',         lam: '0.062',maxW: 30,  defW: 10  },
+  { id: 'CARTING', label: 'Carting',sub: 'Intracity', hint: 'Pickup · 3-Wheeler', lam: '0.15', maxW: 5,   defW: 1   },
+]
+
 const DEFAULTS = {
   origin:           'Delhi',
   destination:      'Roorkee',
@@ -15,16 +22,36 @@ const DEFAULTS = {
   competitor_price: '',
 }
 
+const ADDONS = [
+  { id: 'helper_required',  label: 'Helper Required',        cost: '₹1,200', hint: 'Load + unload' },
+  { id: 'extra_tarpaulin',  label: 'Extra Tarpaulin (Tirpal)',cost: '₹500',   hint: 'Weather cover' },
+  { id: 'extra_rope',       label: 'Extra Rope',             cost: '₹150',   hint: 'Cargo securing' },
+  { id: 'owner_escort',     label: "Owner's Escort",         cost: '₹900',   hint: 'Send my person' },
+  { id: 'express_delivery', label: 'Express Delivery',       cost: '+30%',   hint: 'Priority dispatch' },
+]
+
 export default function InputForm({ onPredict, loading }) {
   const [form, setForm]               = useState(DEFAULTS)
   const [vehicleType, setVehicleType] = useState('FTL')
+  const [selectedAddons, setSelectedAddons] = useState([])
   const [dieselPrice, setDieselPrice] = useState(null)
   const [vision, setVision]           = useState({ loading: false, result: null, error: null })
-  const [originCoords, setOriginCoords] = useState(null)   // {lat, lon} from Nominatim
+  const [originCoords, setOriginCoords] = useState(null)
   const [destCoords,   setDestCoords]   = useState(null)
   const fileRef                       = useRef(null)
 
+  const toggleAddon = (id) =>
+    setSelectedAddons(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  // Clamp weight to vehicle type range when type changes
+  useEffect(() => {
+    const cfg = VEHICLE_TYPES.find(v => v.id === vehicleType)
+    if (cfg && Number(form.weight_tonnes) > cfg.maxW) {
+      set('weight_tonnes', cfg.defW)
+    }
+  }, [vehicleType])
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -34,7 +61,7 @@ export default function InputForm({ onPredict, loading }) {
       competitor_price: form.competitor_price ? Number(form.competitor_price) : null,
       vehicle_type:     vehicleType,
       diesel_price:     dieselPrice,
-      // Nominatim coords — enable OSRM road distance for any Indian city
+      addons:           selectedAddons,
       origin_lat: originCoords?.lat ?? null,
       origin_lon: originCoords?.lon ?? null,
       dest_lat:   destCoords?.lat   ?? null,
@@ -70,7 +97,7 @@ export default function InputForm({ onPredict, loading }) {
         if (data.authentic_diesel)     setDieselPrice(data.authentic_diesel)
         if (data.authentic_competitor) set('competitor_price', String(data.authentic_competitor))
       } catch (err) {
-        setVision({ loading: false, result: null, error: 'Network error — check Flask server.' })
+        setVision({ loading: false, result: null, error: 'Network error — check the API server.' })
       }
     }
     reader.readAsDataURL(file)
@@ -82,7 +109,15 @@ export default function InputForm({ onPredict, loading }) {
     handleVisionFile(file)
   }
 
-  const mLoaded = Math.max(1.5, 3.5 - 0.02 * Number(form.weight_tonnes)).toFixed(2)
+  // Mirror backend 3-factor formula (distance unknown at form time — base value shown)
+  const w = Number(form.weight_tonnes)
+  const { mLoadedBase, mFormula } = (() => {
+    if (vehicleType === 'LCV')     return { mLoadedBase: Math.max(12.0, 20.0 - 2.5 * w), mFormula: `20.0 − (2.5 × ${w}T)` }
+    if (vehicleType === 'MCV')     return { mLoadedBase: Math.max(6.0,  13.0 - 1.0 * w), mFormula: `13.0 − (1.0 × ${w}T)` }
+    if (vehicleType === 'CARTING') return { mLoadedBase: Math.max(4.0,  10.0 - 0.35 * w),mFormula: `10.0 − (0.35 × ${w}T)` }
+    return { mLoadedBase: Math.max(2.5, 4.5 - 0.06 * w), mFormula: `4.5 − (0.06 × ${w}T)` }
+  })()
+  const mLoaded = mLoadedBase.toFixed(2)
 
   return (
     <form onSubmit={handleSubmit} className="glass p-6 space-y-5 animate-fade-in">
@@ -94,32 +129,40 @@ export default function InputForm({ onPredict, loading }) {
         <span className="ml-auto text-xs text-white/25 font-mono">5 inputs</span>
       </div>
 
-      {/* Vehicle type toggle */}
+      {/* Vehicle type — 4-class selector */}
       <div className="space-y-1.5">
         <label className="text-xs font-medium text-white/50">Vehicle Type</label>
         <div className="grid grid-cols-2 gap-2">
-          {[
-            { id: 'FTL',     icon: <Truck   className="w-3.5 h-3.5" />, label: 'FTL', sub: 'λ = 0.062' },
-            { id: 'CARTING', icon: <Package className="w-3.5 h-3.5" />, label: 'Carting', sub: 'λ = 0.15' },
-          ].map(v => (
-            <button
-              key={v.id}
-              type="button"
-              onClick={() => setVehicleType(v.id)}
-              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-medium
-                          transition-all duration-200 ${
-                vehicleType === v.id
-                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-400'
-                  : 'bg-white/[0.03] border-white/10 text-white/40 hover:border-white/20'
-              }`}
-            >
-              {v.icon}
-              <span>{v.label}</span>
-              <span className={`ml-auto font-mono text-xs ${
-                vehicleType === v.id ? 'text-cyan-400/70' : 'text-white/20'
-              }`}>{v.sub}</span>
-            </button>
-          ))}
+          {VEHICLE_TYPES.map(v => {
+            const active = vehicleType === v.id
+            const Icon = v.id === 'FTL' ? Truck : Package
+            return (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setVehicleType(v.id)}
+                className={`flex flex-col gap-0.5 px-3 py-2.5 rounded-xl border text-left
+                            transition-all duration-200 ${
+                  active
+                    ? 'bg-cyan-500/15 border-cyan-500/40'
+                    : 'bg-white/[0.03] border-white/10 hover:border-white/20'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Icon className={`w-3.5 h-3.5 ${active ? 'text-cyan-400' : 'text-white/30'}`} />
+                  <span className={`text-xs font-semibold ${active ? 'text-cyan-400' : 'text-white/50'}`}>
+                    {v.label}
+                  </span>
+                  <span className={`ml-auto font-mono text-xs ${active ? 'text-cyan-400/70' : 'text-white/20'}`}>
+                    λ={v.lam}
+                  </span>
+                </div>
+                <div className={`text-xs pl-5 ${active ? 'text-cyan-300/50' : 'text-white/20'}`}>
+                  {v.hint}
+                </div>
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -177,24 +220,34 @@ export default function InputForm({ onPredict, loading }) {
           </div>
         </div>
 
-        <input
-          type="range" min={1} max={30} step={0.5}
-          value={form.weight_tonnes}
-          onChange={e => set('weight_tonnes', e.target.value)}
-          style={{
-            background: `linear-gradient(to right, #fbbf24 ${((form.weight_tonnes - 1) / 29) * 100}%, rgba(255,255,255,0.1) ${((form.weight_tonnes - 1) / 29) * 100}%)`
-          }}
-        />
-
-        <div className="flex justify-between text-xs text-white/20">
-          <span>1T (Light)</span>
-          <span>30T (Heavy)</span>
-        </div>
+        {(() => {
+          const cfg    = VEHICLE_TYPES.find(v => v.id === vehicleType)
+          const maxW   = cfg?.maxW ?? 30
+          const minW   = vehicleType === 'LCV' ? 0.5 : vehicleType === 'CARTING' ? 0.5 : 1
+          const pct    = ((Number(form.weight_tonnes) - minW) / (maxW - minW)) * 100
+          return (
+            <>
+              <input
+                type="range" min={minW} max={maxW} step={0.5}
+                value={form.weight_tonnes}
+                onChange={e => set('weight_tonnes', e.target.value)}
+                style={{ background: `linear-gradient(to right, #fbbf24 ${pct}%, rgba(255,255,255,0.1) ${pct}%)` }}
+              />
+              <div className="flex justify-between text-xs text-white/20">
+                <span>{minW}T</span>
+                <span>{maxW}T ({cfg?.sub})</span>
+              </div>
+            </>
+          )
+        })()}
 
         <div className="flex items-center gap-1.5 p-2.5 rounded-lg bg-amber-400/5 border border-amber-400/10">
           <Info className="w-3 h-3 text-amber-400/60 flex-shrink-0" />
           <p className="text-xs text-white/30">
-            <span className="font-mono">M<sub>loaded</sub> = 3.5 − (0.02 × {form.weight_tonnes}T) = {mLoaded} km/L</span>
+            <span className="font-mono">
+              M<sub>loaded</sub> = {mFormula} = {mLoaded} km/L
+              <span className="text-white/20"> (+0.5 highway / −0.2 city)</span>
+            </span>
           </p>
         </div>
       </div>
@@ -214,6 +267,62 @@ export default function InputForm({ onPredict, loading }) {
           placeholder="Leave blank or scan a quote photo below"
         />
       </Field>
+
+      {/* ── Add-on Services ───────────────────────────────────────────────── */}
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-white/50">Add-on Services</label>
+        <div className="grid grid-cols-1 gap-1.5">
+          {ADDONS.map(a => {
+            const active = selectedAddons.includes(a.id)
+            return (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => toggleAddon(a.id)}
+                className={`flex items-center gap-3 px-3 py-2 rounded-xl border text-left
+                            transition-all duration-150 ${
+                  active
+                    ? 'bg-emerald-500/10 border-emerald-500/30'
+                    : 'bg-white/[0.02] border-white/8 hover:border-white/15'
+                }`}
+              >
+                <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0
+                                border transition-colors ${
+                  active
+                    ? 'bg-emerald-500 border-emerald-500'
+                    : 'border-white/20 bg-white/[0.04]'
+                }`}>
+                  {active && (
+                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10">
+                      <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.5"
+                            strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className={`text-xs font-medium ${active ? 'text-emerald-400' : 'text-white/50'}`}>
+                    {a.label}
+                  </span>
+                  <span className={`text-xs ml-1.5 ${active ? 'text-emerald-400/50' : 'text-white/20'}`}>
+                    — {a.hint}
+                  </span>
+                </div>
+                <span className={`text-xs font-mono font-semibold flex-shrink-0 ${
+                  active ? 'text-emerald-400' : 'text-white/25'
+                }`}>
+                  {a.cost}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        {selectedAddons.length > 0 && (
+          <p className="text-xs text-white/25 px-1">
+            {selectedAddons.length} add-on{selectedAddons.length > 1 ? 's' : ''} selected
+            — costs added after base quote
+          </p>
+        )}
+      </div>
 
       {/* ── Vision Upload ──────────────────────────────────────────────────── */}
       <div className="space-y-2">
@@ -347,39 +456,12 @@ function Field({ icon, label, children }) {
   )
 }
 
-// ── Nominatim city search (OpenStreetMap — free, no API key) ─────────────────
-async function nominatimSearch(query) {
+// ── City autocomplete via Photon (Komoot OSM CDN) — proxied through backend ──
+async function searchCities(query) {
   try {
-    const params = new URLSearchParams({
-      q:              query,
-      format:         'json',
-      addressdetails: '1',
-      countrycodes:   'in',
-      limit:          '8',
-    })
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?${params}`,
-      { headers: { 'Accept-Language': 'en' } }
-    )
+    const res = await fetch(`/api/autocomplete?q=${encodeURIComponent(query)}`)
     if (!res.ok) return []
-    const data = await res.json()
-
-    const seen = new Set()
-    return data
-      .map(d => {
-        const addr = d.address || {}
-        const city = d.name
-          || addr.city || addr.town || addr.village || addr.municipality
-          || d.display_name.split(',')[0].trim()
-        const state = addr.state || ''
-        return { id: String(d.place_id), city, state, lat: +d.lat, lon: +d.lon }
-      })
-      .filter(d => {
-        if (!d.city || seen.has(d.city.toLowerCase())) return false
-        seen.add(d.city.toLowerCase())
-        return true
-      })
-      .slice(0, 6)
+    return await res.json()
   } catch {
     return []
   }
@@ -393,24 +475,28 @@ function CityInput({ label, value, onChange, onCoordsChange, iconColor }) {
 
   const onInput = (v) => {
     onChange(v)
-    onCoordsChange(null)           // clear saved coords when user edits manually
-    setSuggestions([])
-    setOpen(false)
-
-    if (v.length < 2) return
+    onCoordsChange(null)
     clearTimeout(debounceRef.current)
+
+    if (v.length < 2) {
+      setSuggestions([])
+      setOpen(false)
+      setSearching(false)
+      return
+    }
+
     setSearching(true)
     debounceRef.current = setTimeout(async () => {
-      const results = await nominatimSearch(v)
+      const results = await searchCities(v)
       setSuggestions(results)
       setOpen(results.length > 0)
       setSearching(false)
-    }, 380)                        // 380 ms debounce — respects Nominatim 1 req/s limit
+    }, 220)
   }
 
   const select = (s) => {
     onChange(s.city)
-    onCoordsChange({ lat: s.lat, lon: s.lon })
+    onCoordsChange(s.lat != null ? { lat: s.lat, lon: s.lon } : null)
     setSuggestions([])
     setOpen(false)
   }

@@ -2,19 +2,27 @@ import {
   ArrowRight, Cpu, Fuel, Shield, TrendingUp,
   IndianRupee, CheckCircle2, AlertTriangle,
   Navigation, Thermometer, Gauge, BarChart3,
-  Clock, ChevronRight,
+  Clock, Package2,
 } from 'lucide-react'
 
 const fmt  = n => `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
 const fpct = n => `${(n * 100).toFixed(1)}%`
 
 export default function ResultDashboard({ result }) {
+  if (!result?.pricing?.operational || !result?.abstraction) {
+    return (
+      <div className="glass p-6 text-red-400/70 text-sm text-center">
+        Unexpected response from server — please try again.
+      </div>
+    )
+  }
+
   const {
     origin, destination, trip_date, weight_tonnes,
     abstraction, efficiency_score, efficiency_label,
     delay_probability, p_return, p_return_model,
     confidence_score, confidence_label,
-    pricing,
+    pricing, addons, final_price,
   } = result
 
   return (
@@ -59,15 +67,22 @@ export default function ResultDashboard({ result }) {
         </h4>
 
         <Layer1 data={pricing.operational} />
-        <Layer2 data={pricing.risk} pReturnModel={p_return_model} />
+        <Layer2 data={pricing.risk} pReturnModel={p_return_model} mEmpty={pricing.operational.m_empty_kmpl} />
         <Layer3 data={pricing.corridor} />
         <Layer4 data={pricing.corridor} />
         <Layer5 data={pricing.feasibility} />
       </div>
 
+      {/* Add-ons */}
+      {addons && addons.selected && addons.selected.length > 0 && (
+        <AddonPanel addons={addons} />
+      )}
+
       {/* Final Quote */}
       <FinalQuote
-        price={pricing.recommended_price}
+        price={final_price ?? pricing.recommended_price}
+        basePrice={pricing.recommended_price}
+        addonTotal={addons?.total ?? 0}
         isFeasible={pricing.feasibility.is_feasible}
         note={pricing.feasibility.note}
         floor={pricing.corridor.floor}
@@ -83,7 +98,10 @@ function AbstractionPanel({ abstraction }) {
     { icon: <Navigation className="w-3.5 h-3.5 text-cyan-400" />,
       label: 'Distance',
       value: `${abstraction.distance_km} km`,
-      sub: abstraction.distance_method === 'haversine' ? 'road estimate' : 'historical avg' },
+      sub: abstraction.distance_method === 'osrm' ? 'road (OSRM)'
+         : abstraction.distance_method === 'haversine' ? 'road estimate'
+         : abstraction.distance_method === 'historical_avg' ? 'historical avg'
+         : 'fallback' },
     { icon: <Thermometer className="w-3.5 h-3.5 text-purple-400" />,
       label: 'Season',
       value: abstraction.season,
@@ -205,16 +223,16 @@ function Layer1({ data }) {
     <LayerShell num="01" color="orange" total={data.c_base} label="Operational Base (C_base)"
       icon={<Fuel className="w-4 h-4 text-orange-400" />}>
       <Row label={`Fuel loaded (${data.m_loaded_kmpl} km/L)`} value={data.fuel_loaded_cost} />
-      <Row label="Fuel empty return (4.8 km/L)" value={data.fuel_empty_cost} />
       <Row label="Tolls (round-trip)" value={data.tolls_roundtrip} />
       <Row label="Driver Wages" value={data.driver_wage} />
       <Row label="Maintenance" value={data.maintenance} />
+      <Row label="Mobilization" value={data.mobilization} />
     </LayerShell>
   )
 }
 
 /* ── Layer 2: Return-Load Risk ──────────────────────────────────────────────── */
-function Layer2({ data, pReturnModel }) {
+function Layer2({ data, pReturnModel, mEmpty }) {
   const model = pReturnModel || {}
   return (
     <LayerShell num="02" color="red" total={data.c_risk} label="Return-Load Risk (C_risk)"
@@ -251,8 +269,12 @@ function Layer2({ data, pReturnModel }) {
           <span>P(empty return) = risk exposure</span>
           <span className="font-mono text-red-400">{fpct(data.p_no_return)}</span>
         </div>
+        <div className="flex justify-between text-xs text-white/30 px-0.5">
+          <span>Empty fuel ({mEmpty ?? '—'} km/L)</span>
+          <span className="font-mono">{fmt(data.empty_fuel_val)}</span>
+        </div>
         <p className="text-xs text-white/20 italic pt-0.5">
-          C_risk = (1 − p_return) × Fuel_Empty_Return
+          C_risk = (1 − p_return) × (D ÷ M_empty) × P_diesel
         </p>
       </div>
     </LayerShell>
@@ -261,6 +283,11 @@ function Layer2({ data, pReturnModel }) {
 
 /* ── Layer 3: Pricing Corridor ──────────────────────────────────────────────── */
 function Layer3({ data }) {
+  const mlFactor = data.ml_multiplier ?? 1.0
+  const delayPrem = data.ml_delay_prem_pct ?? 0
+  const effAdj    = data.ml_eff_adj_pct ?? 0
+  const mlMoved   = Math.abs(mlFactor - 1.0) > 0.001
+
   return (
     <LayerShell num="03" color="blue" total={data.p_min} label="Pricing Corridor [P_min → P_max]"
       icon={<TrendingUp className="w-4 h-4 text-blue-400" />}>
@@ -282,8 +309,32 @@ function Layer3({ data }) {
           <span>Demand + urgency premium (15%)</span>
           <span className="font-mono text-emerald-400">+{fmt(data.premium)}</span>
         </div>
+
+        {/* ML Intelligence Multiplier — shows AI influence on price */}
+        {mlMoved && (
+          <div className="flex items-center gap-2 p-2 rounded-lg bg-blue-500/5 border border-blue-500/10">
+            <Cpu className="w-3 h-3 text-blue-400/60 flex-shrink-0" />
+            <div className="flex-1 space-y-0.5">
+              <div className="flex justify-between text-xs text-white/25">
+                <span>ML multiplier</span>
+                <span className={`font-mono font-semibold ${mlFactor > 1 ? 'text-amber-400/70' : 'text-emerald-400/70'}`}>
+                  ×{mlFactor.toFixed(3)}
+                </span>
+              </div>
+              <div className="flex gap-3 text-xs text-white/18 font-mono">
+                {delayPrem !== 0 && (
+                  <span>delay +{delayPrem.toFixed(1)}%</span>
+                )}
+                {effAdj !== 0 && (
+                  <span>eff {effAdj > 0 ? '+' : ''}{effAdj.toFixed(1)}%</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <p className="text-xs text-white/20 italic">
-          P_min = C_base + C_risk &nbsp;·&nbsp; P_max = P_min × 1.15
+          P_min = (C_base + C_risk) × ML_factor &nbsp;·&nbsp; P_max = P_min × 1.15
         </p>
       </div>
     </LayerShell>
@@ -346,9 +397,37 @@ function Layer5({ data }) {
   )
 }
 
+/* ── Add-on Panel ────────────────────────────────────────────────────────────── */
+function AddonPanel({ addons }) {
+  return (
+    <div className="glass p-4 space-y-2">
+      <div className="flex items-center gap-2">
+        <Package2 className="w-3.5 h-3.5 text-emerald-400" />
+        <span className="text-xs font-semibold text-white/40 uppercase tracking-widest">
+          Add-on Services
+        </span>
+        <span className="ml-auto text-xs font-mono text-emerald-400 font-semibold">
+          +{fmt(addons.total)}
+        </span>
+      </div>
+      <div className="space-y-1">
+        {Object.entries(addons.breakdown).map(([key, item]) => (
+          <div key={key} className="flex justify-between text-xs px-1">
+            <div className="flex items-center gap-1.5 text-white/40">
+              <CheckCircle2 className="w-3 h-3 text-emerald-400/60" />
+              {item.label}
+            </div>
+            <span className="font-mono text-emerald-400">+{fmt(item.amount)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ── Final Quote ─────────────────────────────────────────────────────────────── */
-function FinalQuote({ price, isFeasible, note, floor, ceiling }) {
-  const pct = floor < ceiling ? ((price - floor) / (ceiling - floor)) * 100 : 50
+function FinalQuote({ price, basePrice, addonTotal, isFeasible, note, floor, ceiling }) {
+  const pct = floor < ceiling ? ((basePrice - floor) / (ceiling - floor)) * 100 : 50
 
   return (
     <div className="glass-strong p-6 relative overflow-hidden">
@@ -364,6 +443,11 @@ function FinalQuote({ price, isFeasible, note, floor, ceiling }) {
 
         <div className="text-center">
           <div className="text-5xl font-bold font-mono text-gradient">{fmt(price)}</div>
+          {addonTotal > 0 && (
+            <p className="text-xs text-white/30 mt-1 font-mono">
+              {fmt(basePrice)} base + {fmt(addonTotal)} add-ons
+            </p>
+          )}
           <p className="text-xs text-white/35 mt-2">{note}</p>
         </div>
 
